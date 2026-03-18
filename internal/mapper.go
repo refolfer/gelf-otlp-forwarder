@@ -17,6 +17,23 @@ type GELFMessage struct {
 	File         string                 `json:"file,omitempty"`
 	ExtraFields  map[string]interface{} `json:"-"`
 }
+
+// validateGELF checks if the GELF message has required fields
+func (g *GELFMessage) validate() error {
+	if g.Version == "" {
+		return fmt.Errorf("missing required field: version")
+	}
+	if g.Host == "" {
+		return fmt.Errorf("missing required field: host")
+	}
+	if g.ShortMessage == "" {
+		return fmt.Errorf("missing required field: short_message")
+	}
+	if g.Timestamp == 0 {
+		return fmt.Errorf("missing required field: timestamp")
+	}
+	return nil
+}
 type OTLPLogRecord struct {
 	TimeUnixNano         string            `json:"timeUnixNano"`
 	ObservedTimeUnixNano string            `json:"observedTimeUnixNano,omitempty"`
@@ -49,15 +66,36 @@ type OTLPResourceLog struct {
 }
 
 func TransformToOTLP(gelfMessage []byte) ([]byte, error) {
-	// Parse GELF message
+	// Parse GELF message with extra fields support
+	var gelfRaw map[string]interface{}
+	if err := json.Unmarshal(gelfMessage, &gelfRaw); err != nil {
+		return nil, fmt.Errorf("failed to parse GELF message: %w", err)
+	}
+
+	// Convert to strongly-typed GELFMessage
 	var gelf GELFMessage
 	if err := json.Unmarshal(gelfMessage, &gelf); err != nil {
 		return nil, fmt.Errorf("failed to parse GELF message: %w", err)
 	}
 
+	// Extract extra fields (anything starting with _)
+	for key, value := range gelfRaw {
+		if len(key) > 0 && key[0] == '_' {
+			if gelf.ExtraFields == nil {
+				gelf.ExtraFields = make(map[string]interface{})
+			}
+			gelf.ExtraFields[key] = value
+		}
+	}
+
+	// Validate required fields
+	if err := gelf.validate(); err != nil {
+		return nil, fmt.Errorf("invalid GELF message: %w", err)
+	}
+
 	// Check if "message" field should be used as "short_message"
 	if gelf.ShortMessage == "" {
-		if message, exists := gelf.ExtraFields["message"]; exists {
+		if message, exists := gelfRaw["message"]; exists {
 			if messageStr, ok := message.(string); ok {
 				gelf.ShortMessage = messageStr
 			}
