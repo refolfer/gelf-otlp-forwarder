@@ -16,24 +16,24 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Set up UDP listener for GELF messages
-	inboundAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", strconv.Itoa(config.InboundPort)))
+	// Set up TCP listener for GELF messages
+	inboundAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", strconv.Itoa(config.InboundPort)))
 	if err != nil {
-		log.Fatalf("Failed to resolve UDP address: %v", err)
+		log.Fatalf("Failed to resolve TCP address: %v", err)
 	}
 
-	conn, err := net.ListenUDP("udp", inboundAddr)
+	listener, err := net.ListenTCP("tcp", inboundAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen on UDP: %v", err)
+		log.Fatalf("Failed to listen on TCP: %v", err)
 	}
-	defer conn.Close()
+	defer listener.Close()
 
-	// Set up UDP connection for forwarding
-	destAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(config.OutboundHost, strconv.Itoa(config.OutboundPort)))
+	// Set up TCP connection for forwarding
+	destAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(config.OutboundHost, strconv.Itoa(config.OutboundPort)))
 	if err != nil {
 		log.Fatalf("Failed to resolve destination address: %v", err)
 	}
-	destConn, err := net.DialUDP("udp", nil, destAddr)
+	destConn, err := net.DialTCP("tcp", nil, destAddr)
 	if err != nil {
 		log.Fatalf("Failed to connect to destination: %v", err)
 	}
@@ -41,10 +41,18 @@ func main() {
 
 	buf := make([]byte, 65535)
 	for {
-		// Read incoming message
-		n, _, err := conn.ReadFromUDP(buf)
+		// Accept incoming TCP connection
+		conn, err := listener.AcceptTCP()
 		if err != nil {
-			log.Printf("Error reading UDP: %v", err)
+			log.Printf("Error accepting connection: %v", err)
+			continue
+		}
+		defer conn.Close()
+
+		// Read incoming message
+		n, err := conn.Read(buf)
+		if err != nil {
+			log.Printf("Error reading TCP: %v", err)
 			continue
 		}
 
